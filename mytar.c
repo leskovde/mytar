@@ -313,10 +313,10 @@ list_files(FILE* fp)
 		int pos = ftell(fp);
 		int file_size_with_padding = file_size;
 
-		if (file_size % 512 > 0)
+		if (file_size % BLOCK_SIZE > 0)
 		{
-			file_size_with_padding = file_size + 512 - 
-				(file_size % 512);
+			file_size_with_padding = file_size + BLOCK_SIZE - 
+				(file_size % BLOCK_SIZE);
 		}
 
 #ifdef DEBUG
@@ -358,12 +358,14 @@ list_files(FILE* fp)
 		entry = temp;
         }
 
-	bool first_block = zero_block_is_present(total - 2 * 512, 512, fp);
-	bool second_block = zero_block_is_present(total - 512, 512, fp);
+	bool first_block = zero_block_is_present(total - 2 * BLOCK_SIZE, 
+			BLOCK_SIZE, fp);
+	bool second_block = zero_block_is_present(total - BLOCK_SIZE, 
+			BLOCK_SIZE, fp);
 
 	if ((!first_block) && (first_block + second_block > 0))
 	{
-		warnx("A lone zero block at %d", total / 512);
+		warnx("A lone zero block at %d", total / BLOCK_SIZE);
 	}
 
 	if (failure)
@@ -428,7 +430,7 @@ main(int argc, char** argv)
         	printf("Parsing argument no. %d\n", i);
 #endif
 
-		if (strcmp(i[argv], "-f") == 0)
+		if (!strcmp(i[argv], "-f"))
 		{
 			config_.file = true;
 			
@@ -441,7 +443,7 @@ main(int argc, char** argv)
 			continue;
 		}
 
-		if (strcmp(argv[i], "-t") == 0)
+		if (!strcmp(argv[i], "-t"))
 		{
 			config_.list = true;
 			continue;
