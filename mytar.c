@@ -249,8 +249,8 @@ list_files(FILE* fp)
                 {
                         // block number should be added to the err msg
                         free_resources();
-                        err(EX_TARFAILURE,
-                                "Unsupported header type\n");
+                        errx(EX_TARFAILURE,
+                                "Unsupported header type");
                 }
 		
 #ifdef DEBUG
