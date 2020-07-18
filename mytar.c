@@ -4,6 +4,7 @@
 #include <string.h>
 #include <assert.h>
 #include <err.h>
+#include <sysexits.h>
 #include <sys/queue.h>
 
 #define nullptr NULL
@@ -143,7 +144,10 @@ free_resources()
 bool
 zero_block_is_present(int offset, int block_size, FILE* fp)
 {
-	fseek(fp, offset, SEEK_SET);
+	if (fseek(fp, offset, SEEK_SET) != 0)
+	{
+		errx(EX_IOERR, "Could not seek in the input file.");
+	}
 	
 	int differences = 0;
 	char c;
@@ -177,6 +181,12 @@ get_archive_size(FILE* fp)
 {
 	fseek(fp, 0, SEEK_END);
 	int total = ftell(fp);
+	
+	if (total == -1)
+	{
+		errx(EX_IOERR, "Could not seek in the input file.");
+	}
+
 	rewind(fp);
 
 	return (total);
@@ -340,6 +350,11 @@ check_eof(int total, int file_size_with_padding, FILE* fp, const char* name)
 {
         int pos = ftell(fp);
 
+	if (pos == -1)
+	{
+		errx(EX_IOERR, "Could not seek in the input file.");
+	}
+
         // If the next seek is out of range, the archive is truncated.
         if (total - pos < file_size_with_padding)
         {
@@ -374,7 +389,7 @@ process_archive(FILE* fp)
 
 	while (fread(&h, sizeof(header_object), 1, fp))
 	{
-		if (!strlen(h.name))
+		if (h.name[0] == '\0')
 		{
 			break;
 		}
@@ -395,7 +410,12 @@ process_archive(FILE* fp)
 
 		if (extract_or_list_file == false)
                 {
-                        fseek(fp, file_size_with_padding, SEEK_CUR);
+                        if (fseek(fp, file_size_with_padding, SEEK_CUR) != 0)
+			{
+                		errx(EX_IOERR, 
+					"Could not seek in the input file.");
+		        }
+
                         continue;
                 }
 
@@ -411,10 +431,18 @@ process_archive(FILE* fp)
 		{
 			FILE *fpout;
 
-			if ((fpout = fopen(h.name, "w+")) == nullptr)
+			if ((fpout = fopen(h.name, "w")) == nullptr)
 			{
 				warnx("File could not be created");
-				fseek(fp, file_size_with_padding, SEEK_CUR);
+				
+				if (fseek(fp, file_size_with_padding, 
+							SEEK_CUR) != 0)
+				{
+               		 		errx(EX_IOERR,
+					"Could not seek in the input file.");
+        			}
+
+				
 				continue;
 			}
 
@@ -428,12 +456,21 @@ process_archive(FILE* fp)
 
 			fclose(fpout);
 
-			fseek(fp, file_size_with_padding - file_size,
-					SEEK_CUR);
+			if (fseek(fp, file_size_with_padding - file_size,
+					SEEK_CUR) != 0)
+			{
+                		errx(EX_IOERR, 
+					"Could not seek in the input file.");
+        		}
+
 		}
 		else
 		{
-			fseek(fp, file_size_with_padding, SEEK_CUR);
+			if (fseek(fp, file_size_with_padding, SEEK_CUR) != 0)
+			{
+				errx(EX_IOERR,
+                                        "Could not seek in the input file.");
+			}
 		}
 	}
 
