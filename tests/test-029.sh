@@ -21,7 +21,7 @@ dd if=/dev/urandom of=$bigfile bs=1024 count=$count >/dev/null 2>&1
 
 # create
 outfile=$tmp_path/big.tar
-output=$($GNUTAR -c -v -f $outfile . 2>&1)
+output=$($GNUTAR -c -v -f $outfile * 2>&1)
 typeset -i ret=$?
 ((ret == 0)) || { echo "Wrong GNU tar return value $ret." >&2 && exit 1; }
 echo "$output" | sed -e "s/^[a-zA-Z0-9/.]*$base: /mytar: /"
@@ -41,5 +41,7 @@ echo "$output" | sed -e "s/^[a-zA-Z0-9/.]*$base: /mytar: /"
 
 # check size of the extracted file
 typeset -i act_size=$(ls -sk $big_name | cut -f1 -d " ")
-((exp_size != act_size)) || \
+((exp_size != act_size)) && \
     { echo "File sizes differ: $exp_size $act_size" >&2 && exit 1; }
+
+exit 0
