@@ -81,11 +81,6 @@ struct config config_;
 bool
 validate_config()
 {
-
-#ifdef DEBUG
-	printf("Validating config\n");
-#endif
-
 	if ((config_.file && (config_.archive_name != nullptr)) 
 			|| config_.list)
 	{
@@ -104,11 +99,6 @@ validate_config()
 void
 initialize_config()
 {
-
-#ifdef DEBUG
-        printf("Initializing config\n");
-#endif
-
 	config_.file = false;
 	config_.list = false;
 	config_.extract = false;
@@ -124,19 +114,10 @@ initialize_config()
 void
 free_resources()
 {
-
-#ifdef DEBUG
-        printf("Freeing resources\n");
-#endif
-
 	if (config_.archive_name != nullptr)
 	{
 		free(config_.archive_name);
 	}
-
-#ifdef DEBUG
-        printf("Freeing file list\n");
-#endif
 
 	literal_entry* entry = STAILQ_FIRST(&file_list);
 	literal_entry* temp;
@@ -162,11 +143,6 @@ free_resources()
 bool
 zero_block_is_present(int offset, int block_size, FILE* fp)
 {
-
-#ifdef DEBUG
-        printf("Checking if zero block is present, offset: %d\n", offset);
-#endif
-
 	fseek(fp, offset, SEEK_SET);
 	
 	int differences = 0;
@@ -182,10 +158,6 @@ zero_block_is_present(int offset, int block_size, FILE* fp)
 		}
 	}
 
-#ifdef DEBUG
-	printf("Differences: %d\n", differences);
-#endif
-
 	if (differences > 0)
 	{
 		return (false);
@@ -195,188 +167,106 @@ zero_block_is_present(int offset, int block_size, FILE* fp)
 }
 
 /**
- * Converts an octal integer (NOT in the octal format, i.e.\n
- * the argument does not start with a zero) to decimal.
+ * Traverses to the end of the file and returns its size, then traverses back\n
+ * to the beginning.
  *
+ * @return The size of the file with the descriptor 'fp'.
  */
 int
-octal_to_decimal(int octal)
+get_archive_size(FILE* fp)
 {
-	int decimal = 0;
-	int base = 1;
-
-	while (octal)
-	{
-		int last_digit = octal % 10;
-		octal = octal / 10;
-		decimal += last_digit * base;
-		base = base * 8;
-	}
-
-	return (decimal);
-}
-
-void
-read_until_end(FILE* fp, const char* file_name)
-{
-	FILE *fpout;
-        if ((fpout = fopen(file_name, "w+")) == nullptr)
-        {
-                warnx("File could not be created");
-		fclose(fpout);
-		return;
-        }
-
-	char buffer;
-
-        while (fread(&buffer, sizeof(buffer), 1, fp) == sizeof(buffer))
-        {
-                fwrite(&buffer, sizeof(buffer), 1, fpout);
-        }
-
-        fclose(fpout);
-}
-
-/**
- * Traverses the archive given by config and looks for files in the file_list.
- * If the file_list is empty, therefore no files were specified, it lists\n
- * all files in the archive.
- *
- * @return 0 if the listing is successful, 2 if an error is encountered.
- */
-int
-list_files(FILE* fp)
-{
-
-#ifdef DEBUG
-        printf("Listing files\n");
-#endif
-
 	fseek(fp, 0, SEEK_END);
 	int total = ftell(fp);
 	rewind(fp);
 
-#ifdef DEBUG
-        printf("Archive size: %d\n", total);
-#endif
+	return (total);
+}
 
-	header_object h;
-
-	while (fread(&h, sizeof(header_object), 1, fp))
-	{
-		if (!strlen(h.name))
-		{
-			break;
-		}
-
-#ifdef DEBUG
-	        printf("Type flag: %c, decimal: %d\n", h.typeflag, h.typeflag);
-#endif
-
-		if (strcmp(h.magic, ustar_magic))
-                {
-                        free_resources();
+/**
+ * Checks whether the argument is the same as the ustar magic byte sequence,\n
+ * upon failure terminates the program.
+ */
+void
+check_magic(const char* magic)
+{
+	if (strcmp(magic, ustar_magic))
+        {
+                free_resources();
                         
-			warnx("This does not look like a tar archive");
+		warnx("This does not look like a tar archive");
 			
-			errx(EX_TARFAILURE,
+		errx(EX_TARFAILURE,
 			"Exiting with failure status due to previous errors");
-                }
+        }
+}
 
-		
-		if (h.typeflag != '0')
-                {
-                        // block number should be added to the err msg
-                        free_resources();
-                        errx(EX_TARFAILURE,
-                                "Unsupported header type");
-                }
-		
-#ifdef DEBUG
-        	printf("Current file: %s\n", h.name);
-#endif
+/**
+ * Checks whether the argument is the same as the standard file flag\n
+ * (i.e '0'), upon failure terminates the program.
+ */
+void
+check_typeflag(char typeflag)
+{
+	if (typeflag != '0')
+        {
+                free_resources();
+                errx(EX_TARFAILURE,
+                        "Unsupported header type");
+        }
+}
 
-		if (STAILQ_EMPTY(&file_list))
+/**
+ * Traverses the optional file list and checks for the argument in that list.\n
+ * If no list was provided by the user, then the argument should be processed.
+ *
+ * @return 'True' if the file should be processed further, otherwise 'False'.
+ */
+bool
+process_file(const char* file_name)
+{
+	bool process_file = false;
+
+	if (STAILQ_EMPTY(&file_list))
+	{
+		process_file = true;
+	}
+	else
+	{
+		literal_entry* entry;
+		literal_entry* to_be_removed = nullptr;
+
+		// Search the file list for the current file,
+		// if found, delete it from the list - this
+		// will mark it as found.
+		STAILQ_FOREACH(entry, &file_list, entries)
 		{
-			fprintf(stdout, "%s\n", h.name);
-			fflush(stdout);
-		}
-		else
-		{
-			literal_entry* entry;
-			literal_entry* to_be_removed = nullptr;
-
-#ifdef DEBUG
-        		printf("FOREACH\n");
-#endif
-
-			// Search the file list for the current file,
-			// if found, delete it from the list - this
-			// will mark it as found.
-			STAILQ_FOREACH(entry, &file_list, entries)
+			if (!strcmp(entry->item, file_name))
 			{
-
-#ifdef DEBUG
-        			printf("File iteration: %s\n", entry->item);
-#endif
-
-				if (!strcmp(entry->item, h.name))
-                        	{
-                                        fprintf(stdout, "%s\n", h.name);
-                                        fflush(stdout);
-					to_be_removed = entry;
-                                }
-                        }
-			
-			// For some reason I couldn't remove the node
-			// in a for cycle (which should be considered
-			// SAFE), therefore I resorted to this option
-                        //
-			// I will look further into this during
-			// the second phase.
-			if (to_be_removed != nullptr)
-                        {
-                                STAILQ_REMOVE(&file_list, to_be_removed,
-                                                        list_node, entries);
-                                free(to_be_removed->item);
-                                free(to_be_removed);
-                        }
-
-#ifdef DEBUG
-        printf("END FOREACH\n");
-#endif
-
+				process_file = true;
+				to_be_removed = entry;
+			}
 		}
-
-		int file_size = octal_to_decimal(atoi(h.size));
-		int pos = ftell(fp);
-		int file_size_with_padding = file_size;
-
-		if (file_size % BLOCK_SIZE > 0)
+		
+		if (to_be_removed != nullptr)
 		{
-			file_size_with_padding = file_size + BLOCK_SIZE - 
-				(file_size % BLOCK_SIZE);
+			STAILQ_REMOVE(&file_list, to_be_removed,
+						list_node, entries);
+			free(to_be_removed->item);
+			free(to_be_removed);
 		}
-
-#ifdef DEBUG
-        	printf("Current offset: %d\n", pos);
-		printf("File size: %d\n", file_size);
-		printf("Next seeking offset: %d\n", skip);
-#endif
-
-		// If the next seek is out of range, the file is truncated.
-		if (total - pos < file_size_with_padding)
-		{
-			warnx("Unexpected EOF in archive");
-			
-			free_resources();
-			errx(EX_TARFAILURE, 
-				"Error is not recoverable: exiting now");
-		}
-
-		fseek(fp, file_size_with_padding, SEEK_CUR);
 	}
 
+	return (process_file);
+}
+
+/**
+ * Checks the files that have not been processed before and prints a warning\n
+ * message if any of those file are present. Prints an error message if\n
+ * the archive is incomplete.
+ */
+void
+finish_processing(FILE* fp, int total)
+{
 	bool failure = false;
 
 	literal_entry* entry = STAILQ_FIRST(&file_list);
@@ -413,77 +303,89 @@ list_files(FILE* fp)
 		errx(EX_TARFAILURE, 
 		"Exiting with failure status due to previous errors");
 	}
-
-	return (0);
 }
 
-int
-extract_files(FILE* fp)
+/**
+ * Reads the given file descriptor and dumps its containts into a new file.\n
+ * The output is terminated once the input is at the end of the file.
+ */
+void
+dump_until_end(FILE* fp, const char* file_name)
 {
-	fseek(fp, 0, SEEK_END);
-	long int total = ftell(fp);
-	rewind(fp);
+	FILE *fpout;
+        if ((fpout = fopen(file_name, "w+")) == nullptr)
+        {
+                warnx("File could not be created");
+		fclose(fpout);
+		return;
+        }
+
+	char buffer;
+
+        while (fread(&buffer, sizeof(buffer), 1, fp) == sizeof(buffer))
+        {
+                fwrite(&buffer, sizeof(buffer), 1, fpout);
+        }
+
+        fclose(fpout);
+}
+
+/**
+ * Checks whether the next header is out of scope, i.e. the file is trucated.\n
+ * If the archive is trucated and '-x' is active, it extracts the incomplete\n 
+ * file fragment.
+ */
+void
+check_eof(int total, int file_size_with_padding, FILE* fp, const char* name)
+{
+        int pos = ftell(fp);
+
+        // If the next seek is out of range, the archive is truncated.
+        if (total - pos < file_size_with_padding)
+        {
+                warnx("Unexpected EOF in archive");
+
+                if (config_.extract)
+                {
+                        dump_until_end(fp, name);
+                }
+
+                free_resources();
+                errx(EX_TARFAILURE,
+                        "Error is not recoverable: exiting now");
+        }
+
+}
+
+/**
+ * Traverses the archive given by config and looks for files in the file_list.
+ * If the file_list is empty, therefore no files were specified, it lists\n
+ * or extracts all files in the archive.
+ *
+ * @return 0 if the listing or extracting is successful,\n
+ * 2 if an error is encountered.
+ */
+int
+process_archive(FILE* fp)
+{
+	int total = get_archive_size(fp);
 
 	header_object h;
 
 	while (fread(&h, sizeof(header_object), 1, fp))
 	{
-		bool extract_file = false;
-
-	//printf("File name: %s\n", h.name);
-
 		if (!strlen(h.name))
 		{
 			break;
 		}
 
-	//printf("Magic: %s\n", h.magic);
+		check_magic(h.magic);
+		check_typeflag(h.typeflag);
 
-		if (strcmp(h.magic, ustar_magic))
-                {
-                        free_resources();
+		bool extract_or_list_file = process_file(h.name);
 
-			fprintf(stderr,
-				"This does not look like a tar archive\n");
-			fflush(stderr);
-
-			errx(EX_TARFAILURE, 
-			"Exiting with failure status due to previous errors");
-                }
-
-		if (STAILQ_EMPTY(&file_list))
-		{
-			extract_file = true;
-		}
-		else
-		{
-			literal_entry* entry;
-			literal_entry* to_be_removed = nullptr;
-			
-			STAILQ_FOREACH(entry, &file_list, entries)
-			{
-				if (!strcmp(entry->item, h.name))
-                        	{
-					extract_file = true;
-					to_be_removed = entry;
-                                }
-                        }
-
-			if (to_be_removed != nullptr)
-                        {
-                                STAILQ_REMOVE(&file_list, to_be_removed,
-                                                        list_node, entries);
-                                free(to_be_removed->item);
-                                free(to_be_removed);
-                        }
-		}
-
-		long int file_size = strtol(h.size, nullptr, 8);
-		long int pos = ftell(fp);
-		long int file_size_with_padding = file_size;
-
-	//printf("File size: %ld\n", file_size);
-	//printf("Current pos: %ld\n", pos);
+		int file_size = strtol(h.size, nullptr, 8);
+		int file_size_with_padding = file_size;
 
 		if (file_size % BLOCK_SIZE > 0)
 		{
@@ -491,97 +393,52 @@ extract_files(FILE* fp)
 				(file_size % BLOCK_SIZE);
 		}
 
-	//printf("File size with padding: %ld\n", file_size_with_padding);
-
-		if (extract_file == false)
+		if (extract_or_list_file == false)
                 {
                         fseek(fp, file_size_with_padding, SEEK_CUR);
                         continue;
                 }
 
-	//printf("Extract file: true\n");
-
-		if (config_.verbose)
+		if (config_.verbose || config_.list)
                 {
                         fprintf(stdout, "%s\n", h.name);
                         fflush(stdout);
                 }
 
+		check_eof(total, file_size_with_padding, fp, h.name);
 
-		if (total - pos < file_size_with_padding)
+		if (config_.extract)
 		{
-			warnx("Unexpected EOF in archive");
+			FILE *fpout;
 
-			read_until_end(fp, h.name);
+			if ((fpout = fopen(h.name, "w+")) == nullptr)
+			{
+				warnx("File could not be created");
+				fseek(fp, file_size_with_padding, SEEK_CUR);
+				continue;
+			}
 
-			free_resources();
-			errx(EX_TARFAILURE, 
-				"Error is not recoverable: exiting now");
+			char buffer;
+		
+			for (int i = 0; i < file_size; i++)
+			{
+				fread(&buffer, sizeof(buffer), 1, fp);
+				fwrite(&buffer, sizeof(buffer), 1, fpout);
+			}
+
+			fclose(fpout);
+
+			fseek(fp, file_size_with_padding - file_size,
+					SEEK_CUR);
 		}
-
-	//printf("Dumping file\n");
-
-		FILE *fpout;
-		if ((fpout = fopen(h.name, "w+")) == nullptr)
+		else
 		{
-			warnx("File could not be created");
 			fseek(fp, file_size_with_padding, SEEK_CUR);
-			continue;
 		}
+	}
 
-	//printf("Number of blocks: %d\n", file_size_with_padding / BLOCK_SIZE);
-
-		char buffer;
+	finish_processing(fp, total);
 	
-		for (int i = 0; i < file_size; i++)
-		{
-			fread(&buffer, sizeof(buffer), 1, fp);
-			fwrite(&buffer, sizeof(buffer), 1, fpout);
-		}
-
-		fseek(fp, file_size_with_padding - file_size, SEEK_CUR);
-	
-	//printf("Dumping done\n");
-	//pos = ftell(fp);
-	//printf("Pos after dumping: %ld\n", pos);
-
-		fclose(fpout);
-	}
-
-	bool failure = false;
-
-	literal_entry* entry = STAILQ_FIRST(&file_list);
-	literal_entry* temp;
-        
-	while (entry != nullptr)
-	{
-		failure = true;
-                warnx("%s: Not found in archive", entry->item);
-                
-		temp = STAILQ_NEXT(entry, entries);
-		STAILQ_REMOVE(&file_list, entry, list_node, entries);
-		free(entry->item);
-		free(entry);
-		entry = temp;
-        }
-
-	bool first_block = zero_block_is_present(total - 2 * BLOCK_SIZE, 
-			BLOCK_SIZE, fp);
-	bool second_block = zero_block_is_present(total - BLOCK_SIZE, 
-			BLOCK_SIZE, fp);
-
-	if ((!first_block) && (first_block + second_block > 0))
-	{
-		warnx("A lone zero block at %ld", total / BLOCK_SIZE);
-	}
-
-	if (failure)
-	{
-		free_resources();
-		errx(EX_TARFAILURE, 
-		"Exiting with failure status due to previous errors");
-	}
-
 	return (0);
 }
 
@@ -611,22 +468,12 @@ launcher()
 	}
 	else
 	{
-		// fp = TAPE...
 		free_resources();
 		errx(EX_TARFAILURE, "Not implemented");
 	}
 
-	int ret_val;
+	int ret_val = process_archive(fp);
 
-	if (config_.extract)
-	{
-		ret_val = extract_files(fp);
-	}
-	else
-	{
-		ret_val = list_files(fp);
-	}
-	
 	fclose(fp);
 	free_resources();
 
@@ -640,11 +487,6 @@ main(int argc, char** argv)
 
 	for (int i = 1; i < argc; i++)
 	{
-
-#ifdef DEBUG
-        	printf("Parsing argument no. %d\n", i);
-#endif
-
 		if (!strcmp(i[argv], "-f"))
 		{
 			config_.file = true;
@@ -702,11 +544,6 @@ main(int argc, char** argv)
 
 	if (validate_config())
 	{
-
-#ifdef DEBUG
-        	printf("Archive name: %s\n", config_.archive_name);
-#endif
-
 		return (launcher());
 	}
 
