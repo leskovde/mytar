@@ -154,7 +154,10 @@ zero_block_is_present(int offset, int block_size, FILE* fp)
 
 	for (int i = 0; i < block_size; i++)
 	{
-		fread(&c, sizeof(c), 1, fp);
+		if (fread(&c, sizeof(c), 1, fp) != 1)
+		{
+			errx(EX_IOERR, "Could not read the input file.");
+		}
 
 		if (c != '\0')
 		{
@@ -221,7 +224,7 @@ check_typeflag(char typeflag)
         {
                 free_resources();
                 errx(EX_TARFAILURE,
-                        "Unsupported header type");
+                        "Unsupported header type: %d", typeflag);
         }
 }
 
@@ -332,9 +335,14 @@ dump_until_end(FILE* fp, const char* file_name)
 
 	char buffer;
 
-        while (fread(&buffer, sizeof(buffer), 1, fp) == sizeof(buffer))
+        while (fread(&buffer, sizeof(buffer), 1, fp) == 1)
         {
-                fwrite(&buffer, sizeof(buffer), 1, fpout);
+                if (fwrite(&buffer, sizeof(buffer), 1, fpout) 
+				!= sizeof(buffer))
+		{
+                        errx(EX_IOERR, "Could not write to the output file.");
+                }
+
         }
 
         fclose(fpout);
@@ -387,7 +395,8 @@ process_archive(FILE* fp)
 
 	header_object h;
 
-	while (fread(&h, sizeof(header_object), 1, fp))
+	while (fread(&h, sizeof(header_object), 1, fp) 
+			== 1)
 	{
 		if (h.name[0] == '\0')
 		{
@@ -450,8 +459,20 @@ process_archive(FILE* fp)
 		
 			for (int i = 0; i < file_size; i++)
 			{
-				fread(&buffer, sizeof(buffer), 1, fp);
-				fwrite(&buffer, sizeof(buffer), 1, fpout);
+				if (fread(&buffer, sizeof(buffer), 1, fp)
+						!= 1)
+				{
+                        		errx(EX_IOERR, 
+					"Could not read the input file.");
+                		}
+
+				if (fwrite(&buffer, sizeof(buffer), 1, fpout)
+						!= 1)
+		                {
+                        		errx(EX_IOERR, 
+					"Could not write to the output file.");
+                		}
+
 			}
 
 			fclose(fpout);
